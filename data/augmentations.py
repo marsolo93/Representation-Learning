@@ -1,7 +1,5 @@
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
-from torch import nn
 from torchvision import transforms
 from dataclasses import dataclass
 
@@ -106,7 +104,10 @@ class DINODataAugmentator:
             ]
         )
 
-    def __call__(self, image) -> DINOImageData:
+    def __call__(
+            self,
+            image: PIL.Image.Image
+    ) -> DINOImageData:
         global_1: torch.Tensor = self.global_1_pipe(img=image)
         global_2: torch.Tensor = self.global_2_pipe(img=image)
         local_image: list[torch.Tensor] = [
