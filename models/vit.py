@@ -404,8 +404,6 @@ if __name__ == "__main__":
     )
 
     out = model(img)
-    print(model)
-    print(out.shape)
     assert out.shape == torch.Size([BATCH_SIZE, HIDDEN_DIM]), (
         "Sorry, not correct!"
     )
