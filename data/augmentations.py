@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import torch
 from torchvision import transforms
 from dataclasses import dataclass
+import PIL
 
 
 @dataclass
@@ -13,12 +14,12 @@ class DINOImageData:
 class DINODataAugmentator:
 
     def __init__(
-            self,
-            global_scale: tuple[float] = (0.6, 0.8),
-            local_scale: tuple[float] = (0.2, 0.4),
-            local_numbers: int = 8,
-            global_image_size: int = 224,
-            local_image_size: int = 96
+        self,
+        global_scale: tuple[float] = (0.6, 0.8),
+        local_scale: tuple[float] = (0.2, 0.4),
+        local_numbers: int = 8,
+        global_image_size: int = 224,
+        local_image_size: int = 96,
     ):
         self.local_numbers = local_numbers
         global_geometric_transforms = transforms.Compose(
@@ -26,7 +27,7 @@ class DINODataAugmentator:
                 transforms.RandomResizedCrop(
                     global_image_size,
                     scale=global_scale,
-                    interpolation=transforms.InterpolationMode.BICUBIC
+                    interpolation=transforms.InterpolationMode.BICUBIC,
                 ),
                 transforms.RandomHorizontalFlip(p=0.5),
             ]
@@ -37,7 +38,7 @@ class DINODataAugmentator:
                 transforms.RandomResizedCrop(
                     local_image_size,
                     scale=local_scale,
-                    interpolation=transforms.InterpolationMode.BICUBIC
+                    interpolation=transforms.InterpolationMode.BICUBIC,
                 ),
                 transforms.RandomHorizontalFlip(p=0.5),
             ]
@@ -47,8 +48,11 @@ class DINODataAugmentator:
             [
                 transforms.RandomApply(
                     [
-                        transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)
-                    ], p=0.8,
+                        transforms.ColorJitter(
+                            brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1
+                        )
+                    ],
+                    p=0.8,
                 ),
                 transforms.RandomGrayscale(p=0.2),
             ]
@@ -57,22 +61,17 @@ class DINODataAugmentator:
         global_transform_2 = transforms.Compose(
             [
                 transforms.RandomApply(
-                    [
-                        transforms.GaussianBlur(kernel_size=9, sigma=(0.1, 2.0))
-                    ], p=0.1,
+                    [transforms.GaussianBlur(kernel_size=9, sigma=(0.1, 2.0))],
+                    p=0.1,
                 ),
                 transforms.RandomSolarize(threshold=128, p=0.2),
             ]
         )
 
         local_transform_extra = transforms.RandomApply(
-                    [
-                        transforms.GaussianBlur(
-                            kernel_size=9,
-                            sigma=(0.1, 2.0)
-                        )
-                    ], p=0.1,
-                )
+            [transforms.GaussianBlur(kernel_size=9, sigma=(0.1, 2.0))],
+            p=0.1,
+        )
 
         normalize = transforms.Compose(
             [
@@ -81,18 +80,14 @@ class DINODataAugmentator:
             ]
         )
         self.global_1_pipe = transforms.Compose(
-            [
-                global_geometric_transforms,
-                color_jittering,
-                normalize
-             ]
+            [global_geometric_transforms, color_jittering, normalize]
         )
         self.global_2_pipe = transforms.Compose(
             [
                 global_geometric_transforms,
                 color_jittering,
                 global_transform_2,
-                normalize
+                normalize,
             ]
         )
         self.local_pipe = transforms.Compose(
@@ -100,30 +95,25 @@ class DINODataAugmentator:
                 local_geometric_transforms,
                 color_jittering,
                 local_transform_extra,
-                normalize
+                normalize,
             ]
         )
 
-    def __call__(
-            self,
-            image: PIL.Image.Image
-    ) -> DINOImageData:
+    def __call__(self, image: PIL.Image.Image) -> DINOImageData:
         global_1: torch.Tensor = self.global_1_pipe(img=image)
         global_2: torch.Tensor = self.global_2_pipe(img=image)
         local_image: list[torch.Tensor] = [
             self.local_pipe(img=image) for _ in range(self.local_numbers)
         ]
-        output = DINOImageData(
-            locals=local_image,
-            globals=[global_1, global_2]
-        )
+        output = DINOImageData(locals=local_image, globals=[global_1, global_2])
         return output
 
 
 if __name__ == "__main__":
     from PIL import Image
+
     image = Image.open("../test_image.png")
-    image = image.convert('RGB')
+    image = image.convert("RGB")
     augmentator = DINODataAugmentator()
     data = augmentator(image)
     fig, axs = plt.subplots(nrows=5, ncols=2)
@@ -136,6 +126,3 @@ if __name__ == "__main__":
         axs[row, col].imshow(data.locals[i].permute(1, 2, 0).cpu().numpy())
 
     plt.show()
-
-
-

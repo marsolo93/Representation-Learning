@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 
 
-
 @dataclass
 class GatedMLPConfig:
     hidden_dim: int
@@ -20,8 +19,8 @@ class MultiHeadAttentionConfig:
     num_heads: int
     qkv_bias: bool = False
     qk_scale: Optional[float] = None
-    attn_drop: float = 0.
-    proj_drop: float = 0.
+    attn_drop: float = 0.0
+    proj_drop: float = 0.0
     use_flash_attn: bool = False
 
 
@@ -77,9 +76,10 @@ class ViTConfig:
     rope_theta: Optional[float] = None
 
     def __post_init__(self):
-        assert (self.patch_encode_config.hidden_dim ==
-                self.transformer_block_config.multi_head_attention_config.hidden_dim
-                ), (
+        assert (
+            self.patch_encode_config.hidden_dim
+            == self.transformer_block_config.multi_head_attention_config.hidden_dim
+        ), (
             f"Please ensure, that the hidden dimension of the "
             f"MLP (size: {self.patch_encode_config.hidden_dim})"
             f"corresponds to the hidden dimension of the multi "
@@ -88,6 +88,6 @@ class ViTConfig:
         )
 
         if "rotary_meta" in self.positional_encoding:
-            assert self.rope_config, (
-                "If you want to select the rotary_meta encoding, you need to specify also the config."
-            )
+            assert (
+                self.rope_config
+            ), "If you want to select the rotary_meta encoding, you need to specify also the config."

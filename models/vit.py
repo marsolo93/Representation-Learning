@@ -14,7 +14,6 @@ from loguru import logger
 
 from typing import Optional, Tuple
 from layers import DropPath
-from functools import partial
 
 from nn_configs import (
     GatedMLPConfig,
@@ -22,30 +21,28 @@ from nn_configs import (
     TransformerBlockConfig,
     PatchingEncodingConfig,
     ViTConfig,
-    RoPEConfig
+    RoPEConfig,
 )
 from utils import apply_rope
 from layers import RopePositionEmbedding
+from model_output import ViTOutput
 
 
 class GatedMLP(nn.Module):
 
-    def __init__(
-            self,
-            config: GatedMLPConfig
-    ) -> None:
+    def __init__(self, config: GatedMLPConfig) -> None:
         super().__init__()
         self.linear_gated = nn.Linear(
             in_features=config.hidden_dim,
-            out_features=config.hidden_dim*config.hidden_dim_factor
+            out_features=config.hidden_dim * config.hidden_dim_factor,
         )
         self.linear_source = nn.Linear(
             in_features=config.hidden_dim,
-            out_features=config.hidden_dim*config.hidden_dim_factor
+            out_features=config.hidden_dim * config.hidden_dim_factor,
         )
         self.linear_post_gating = nn.Linear(
-            in_features=config.hidden_dim*config.hidden_dim_factor,
-            out_features=config.hidden_dim
+            in_features=config.hidden_dim * config.hidden_dim_factor,
+            out_features=config.hidden_dim,
         )
         self.activation_fn = config.activation_fn
         self.drop = nn.Dropout(config.dropout)
@@ -61,24 +58,26 @@ class GatedMLP(nn.Module):
 class MultiHeadAttention(nn.Module):
 
     def __init__(
-            self,
-            config: MultiHeadAttentionConfig,
-            is_last: bool = False,
-            num_registers: Optional[int] = None
+        self,
+        config: MultiHeadAttentionConfig,
+        is_last: bool = False,
+        num_registers: Optional[int] = None,
     ):
         super().__init__()
         assert config.hidden_dim % config.num_heads == 0, (
             "Please ensure that the hidden dimension (hidden_dim) "
             "is a multiplier of the number of heads (num_heads)."
         )
-        self.linear = nn.Linear(in_features=config.hidden_dim,
-                                out_features=config.hidden_dim*3,
-                                bias=config.qkv_bias)
+        self.linear = nn.Linear(
+            in_features=config.hidden_dim,
+            out_features=config.hidden_dim * 3,
+            bias=config.qkv_bias,
+        )
         self.num_heads = config.num_heads
         self.use_flash_attn = config.use_flash_attn
         self.head_dim = config.hidden_dim // config.num_heads
         self.hidden_dim = config.hidden_dim
-        self.qk_scale = config.qk_scale or self.head_dim ** -0.5
+        self.qk_scale = config.qk_scale or self.head_dim**-0.5
         self.is_last = is_last
         self.num_registers = num_registers
         if not self.use_flash_attn or self.is_last:
@@ -86,13 +85,12 @@ class MultiHeadAttention(nn.Module):
         else:
             self.attn_drop = config.attn_drop
         self.proj_dropout = nn.Dropout(p=config.proj_drop)
-        self.proj_linear = nn.Linear(in_features=config.hidden_dim,
-                                     out_features=config.hidden_dim)
+        self.proj_linear = nn.Linear(
+            in_features=config.hidden_dim, out_features=config.hidden_dim
+        )
 
     def forward(
-            self,
-            x: torch.Tensor,
-            rope_sincos: Optional[torch.Tensor] = None
+        self, x: torch.Tensor, rope_sincos: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         B, T, C = x.shape
         assert C == self.hidden_dim, (
@@ -109,8 +107,9 @@ class MultiHeadAttention(nn.Module):
         if rope_sincos is not None:
             logger.trace(f"Rotary positional embedding...")
             q, k = apply_rope(q=q, k=k, rope=rope_sincos)
-            logger.trace(f"Rotary positional embedding was added to the "
-                         f"queries and keys.")
+            logger.trace(
+                f"Rotary positional embedding was added to the " f"queries and keys."
+            )
         if not self.use_flash_attn or self.is_last:
             logger.trace(f"Attention score computation...")
             qk = q @ k.transpose(-1, -2) * self.qk_scale
@@ -124,7 +123,7 @@ class MultiHeadAttention(nn.Module):
                 query=q,
                 key=k,
                 value=v,
-                dropout_p=self.attn_drop if self.training else 0.0
+                dropout_p=self.attn_drop if self.training else 0.0,
             )
             logger.trace(f"Scaled dot product was computed.")
         x = x.transpose(1, 2).flatten(2)
@@ -140,10 +139,10 @@ class MultiHeadAttention(nn.Module):
 class TransformerBlock(nn.Module):
 
     def __init__(
-            self,
-            config: TransformerBlockConfig,
-            is_last: bool = False,
-            num_registers: Optional[int] = None
+        self,
+        config: TransformerBlockConfig,
+        is_last: bool = False,
+        num_registers: Optional[int] = None,
     ):
         super().__init__()
         self.config = config
@@ -151,25 +150,22 @@ class TransformerBlock(nn.Module):
             self.multi_head_attention = MultiHeadAttention(
                 config=config.multi_head_attention_config,
                 is_last=True,
-                num_registers=num_registers
+                num_registers=num_registers,
             )
         else:
             self.multi_head_attention = MultiHeadAttention(
-                config=config.multi_head_attention_config,
-                num_registers = num_registers
+                config=config.multi_head_attention_config, num_registers=num_registers
             )
-        self.mlp = GatedMLP(
-            config=config.mlp_config
-        )
+        self.mlp = GatedMLP(config=config.mlp_config)
         self.norm_1 = nn.LayerNorm(config.mlp_config.hidden_dim)
         self.norm_2 = nn.LayerNorm(config.mlp_config.hidden_dim)
         self.drop_path = DropPath(drop_prob=config.drop_path_prob)
 
     def forward(
-            self,
-            x: torch.Tensor,
-            rope_sincos: torch.Tensor | None = None,
-            return_attn: bool = False
+        self,
+        x: torch.Tensor,
+        rope_sincos: torch.Tensor | None = None,
+        return_attn: bool = False,
     ) -> torch.Tensor:
         res = x
         logger.trace(f"Residual data was stored...")
@@ -183,26 +179,29 @@ class TransformerBlock(nn.Module):
                 "scores."
             )
             logger.trace(f"Multi head attention...")
-            _, attn = self.multi_head_attention(x, rope_sincos=rope_sincos if rope_sincos is not None else None)
+            _, attn = self.multi_head_attention(
+                x, rope_sincos=rope_sincos if rope_sincos is not None else None
+            )
             return attn
 
         logger.trace(f"Multi head attention...")
-        x, _ = self.multi_head_attention(x, rope_sincos=rope_sincos if rope_sincos is not None else None)
+        x, _ = self.multi_head_attention(
+            x, rope_sincos=rope_sincos if rope_sincos is not None else None
+        )
         x = res + self.drop_path(x)
         logger.trace(f"Addition with residual was performed")
         logger.trace(f"Multi-layer perceptron computation...")
         x = res + self.drop_path(self.mlp(self.norm_2(x)))
-        logger.trace(f"Multi-layer perceptron computation and addition "
-                     f"to the residual was done.")
+        logger.trace(
+            f"Multi-layer perceptron computation and addition "
+            f"to the residual was done."
+        )
         return x
 
 
 class PatchingEncoding(nn.Module):
 
-    def __init__(
-            self,
-            config: PatchingEncodingConfig
-    ):
+    def __init__(self, config: PatchingEncodingConfig):
         super().__init__()
         assert config.img_size % config.num_patches_in_dimension == 0, (
             "Please ensure, that the img size divided by the "
@@ -214,7 +213,7 @@ class PatchingEncoding(nn.Module):
             in_channels=config.in_channels,
             out_channels=config.hidden_dim,
             kernel_size=kernel_size,
-            stride=kernel_size
+            stride=kernel_size,
         )
 
     def forward(self, x):
@@ -225,66 +224,63 @@ class PatchingEncoding(nn.Module):
 
 class ViT(nn.Module):
 
-    def __init__(
-            self,
-            config: ViTConfig
-    ):
+    def __init__(self, config: ViTConfig):
         super().__init__()
         self.config = config
         hidden_dim = config.patch_encode_config.hidden_dim
-        num_heads = config.transformer_block_config.multi_head_attention_config.num_heads
-        img_size = config.patch_encode_config.img_size
-        patch_size = img_size // config.patch_encode_config.num_patches_in_dimension
         self.patch_encode = PatchingEncoding(config.patch_encode_config)
-        self.cls_token = nn.Parameter(
-            data=torch.empty([1, 1, hidden_dim])
-        )
+        self.cls_token = nn.Parameter(data=torch.empty([1, 1, hidden_dim]))
         if config.registers:
             self.register_token = nn.Parameter(
                 data=torch.empty([1, config.registers, hidden_dim])
             )
         if "absolute_trainable" in config.positional_encoding:
             if config.registers:
-                length = config.patch_encode_config.num_patches_in_dimension ** 2 + config.registers + 1
+                length = (
+                    config.patch_encode_config.num_patches_in_dimension**2
+                    + config.registers
+                    + 1
+                )
             else:
-                length = config.patch_encode_config.num_patches_in_dimension ** 2 + 1
+                length = config.patch_encode_config.num_patches_in_dimension**2 + 1
             self.positional_encoding = nn.Parameter(
                 data=torch.empty([1, length, config.patch_encode_config.hidden_dim])
             )
 
         if "rotary_meta" in config.positional_encoding:
-            self.rope_embed = RopePositionEmbedding(
-                config=config.rope_config
-            )
+            self.rope_embed = RopePositionEmbedding(config=config.rope_config)
 
         self.blocks = nn.ModuleList(
-            [TransformerBlock(
-                config=config.transformer_block_config,
-                num_registers=config.registers
-            ) for _ in range(config.num_layers - 1)]
+            [
+                TransformerBlock(
+                    config=config.transformer_block_config,
+                    num_registers=config.registers,
+                )
+                for _ in range(config.num_layers - 1)
+            ]
         )
         self.blocks.append(
             TransformerBlock(
                 config=config.transformer_block_config,
                 num_registers=config.registers,
-                is_last=True
+                is_last=True,
             )
         )
         self.pos_drop = nn.Dropout(p=config.positional_drop)
         self.norm = nn.LayerNorm(hidden_dim)
 
         if "absolute_trainable" in config.positional_encoding:
-            trunc_normal_(self.positional_encoding, std=.02)
-        trunc_normal_(self.cls_token, std=.02)
+            trunc_normal_(self.positional_encoding, std=0.02)
+        trunc_normal_(self.cls_token, std=0.02)
         if config.registers:
-            trunc_normal_(self.register_token, std=.02)
+            trunc_normal_(self.register_token, std=0.02)
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
         if "rotary_meta" in self.config.positional_encoding:
             self.rope_embed._init_weights()
         if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=.02)
+            trunc_normal_(m.weight, std=0.02)
             if isinstance(m, nn.Linear) and m.bias is not None:
                 constant_(m.bias, 0)
         elif isinstance(m, nn.LayerNorm):
@@ -292,9 +288,9 @@ class ViT(nn.Module):
             constant_(m.weight, 1.0)
 
     def forward(
-            self,
-            x: torch.Tensor,
-    ) -> torch.Tensor:
+        self,
+        x: torch.Tensor,
+    ) -> ViTOutput:
         logger.trace(f"Image was parsed to the model. DATA SHAPE: {x.shape}")
         x, num_patch = self.__preprocess_patch(x)
         logger.trace(f"Image is preprocessed. DATA SHAPE: {x.shape}")
@@ -308,12 +304,18 @@ class ViT(nn.Module):
                 x = blk(x)
         logger.trace(f"Normalization and CLS token extration...")
         x = self.norm(x)
-        return x[:, 0]
 
-    def __preprocess_patch(
-            self,
-            x: torch.Tensor
-    ) -> Tuple[torch.Tensor, int]:
+        vit_output = ViTOutput(
+            cls_token=x[:, 0:1, :],
+            patch_tokens=x[:, 1:int(num_patch**2), :],
+            register_tokens=(
+                x[:, int(num_patch**2):, :] if self.config.registers else None
+            ),
+        )
+        logger.trace(f"Output generated with id: {id(vit_output)}")
+        return vit_output
+
+    def __preprocess_patch(self, x: torch.Tensor) -> Tuple[torch.Tensor, int]:
         B, _, _, _ = x.shape
         logger.trace(f"Image patching and encoding...")
         x = self.patch_encode(x)
@@ -345,6 +347,7 @@ class ViT(nn.Module):
 
 if __name__ == "__main__":
     import sys
+
     logger.add(sys.stderr, level="TRACE")
     HIDDEN_DIM = 128
     NUM_LAYERS = 4
@@ -377,7 +380,7 @@ if __name__ == "__main__":
         hidden_dim=HIDDEN_DIM,
         img_size=IMG_SIZE,
         num_patches_in_dimension=NUM_PATCH_PER_DIM,
-        in_channels=IN_CHANNELS
+        in_channels=IN_CHANNELS,
     )
 
     rope_config = RoPEConfig(
@@ -392,18 +395,14 @@ if __name__ == "__main__":
         patch_encode_config=patch_encoding_config,
         rope_config=rope_config,
         transformer_block_config=transformer_block_config,
-        rope_theta=100.0
+        rope_theta=100.0,
     )
 
     model = ViT(config=vit_config)
 
     BATCH_SIZE = 4
 
-    img = torch.rand(
-        size=[BATCH_SIZE, IN_CHANNELS, IMG_SIZE, IMG_SIZE]
-    )
+    img = torch.rand(size=[BATCH_SIZE, IN_CHANNELS, IMG_SIZE, IMG_SIZE])
 
     out = model(img)
-    assert out.shape == torch.Size([BATCH_SIZE, HIDDEN_DIM]), (
-        "Sorry, not correct!"
-    )
+    print(out)

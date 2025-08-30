@@ -3,30 +3,25 @@ from typing import Tuple
 
 
 def drop_path(
-        x: torch.Tensor,
-        drop_prob: float = 0.,
-        training: bool = False
+    x: torch.Tensor, drop_prob: float = 0.0, training: bool = False
 ) -> torch.Tensor:
     """
     Reference:
     https://github.com/huggingface/pytorch-image-models/blob/
     a6e8598aaf90261402f3e9e9a3f12eac81356e9d/timm/models/layers/drop.py#L140
     """
-    if drop_prob == 0. or not training:
+    if drop_prob == 0.0 or not training:
         return x
     keep_prob = 1 - drop_prob
     shape = (x.shape[0],) + (1,) * (x.ndim - 1)
-    random_tensor = keep_prob + torch.rand(
-        shape, dtype=x.dtype, device=x.device)
+    random_tensor = keep_prob + torch.rand(shape, dtype=x.dtype, device=x.device)
     random_tensor.floor_()  # binarize
     output = x.div(keep_prob) * random_tensor
     return output
 
 
 # RoPE-related functions:
-def rope_rotate_half(
-        x: torch.Tensor
-) -> torch.Tensor:
+def rope_rotate_half(x: torch.Tensor) -> torch.Tensor:
     """
     Copied from: https://github.com/facebookresearch/dinov3/blob/main/dinov3/layers/attention.py#L66
     """
@@ -36,11 +31,7 @@ def rope_rotate_half(
     return torch.cat([-x2, x1], dim=-1)
 
 
-def rope_apply(
-        x: torch.Tensor,
-        sin: torch.Tensor,
-        cos: torch.Tensor
-) -> torch.Tensor:
+def rope_apply(x: torch.Tensor, sin: torch.Tensor, cos: torch.Tensor) -> torch.Tensor:
     """
     Copied from: https://github.com/facebookresearch/dinov3/blob/main/dinov3/layers/attention.py#L66
     """
@@ -51,9 +42,9 @@ def rope_apply(
 
 
 def apply_rope(
-        q: torch.Tensor,
-        k: torch.Tensor,
-        rope: torch.Tensor | Tuple[torch.Tensor, torch.Tensor]
+    q: torch.Tensor,
+    k: torch.Tensor,
+    rope: torch.Tensor | Tuple[torch.Tensor, torch.Tensor],
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Copied from: https://github.com/facebookresearch/dinov3/blob/main/dinov3/layers/attention.py#L66

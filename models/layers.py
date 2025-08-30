@@ -15,6 +15,7 @@ class DropPath(nn.Module):
     https://github.com/huggingface/pytorch-image-models/blob/
     a6e8598aaf90261402f3e9e9a3f12eac81356e9d/timm/models/layers/drop.py#L140
     """
+
     def __init__(self, drop_prob=None):
         super(DropPath, self).__init__()
         self.drop_prob = drop_prob
@@ -28,15 +29,17 @@ class RopePositionEmbedding(nn.Module):
     Copied from: https://github.com/facebookresearch/dinov3/blob/main/dinov3/layers/rope_position_encoding.py
     and a bit modified.
     """
-    def __init__(
-        self,
-        config
-    ):
+
+    def __init__(self, config):
         super().__init__()
         assert config.embed_dim % (4 * config.num_heads) == 0
         both_periods = config.min_period is not None and config.max_period is not None
-        if (config.base is None and not both_periods) or (config.base is not None and both_periods):
-            raise ValueError("Either `base` or `min_period`+`max_period` must be provided.")
+        if (config.base is None and not both_periods) or (
+            config.base is not None and both_periods
+        ):
+            raise ValueError(
+                "Either `base` or `min_period`+`max_period` must be provided."
+            )
 
         D_head = config.embed_dim // config.num_heads
         self.base = config.base
@@ -76,13 +79,17 @@ class RopePositionEmbedding(nn.Module):
             coords_w = torch.arange(0.5, W, **dd) / W  # [W]
         else:
             raise ValueError(f"Unknown normalize_coords: {self.normalize_coords}")
-        coords = torch.stack(torch.meshgrid(coords_h, coords_w, indexing="ij"), dim=-1)  # [H, W, 2]
+        coords = torch.stack(
+            torch.meshgrid(coords_h, coords_w, indexing="ij"), dim=-1
+        )  # [H, W, 2]
         coords = coords.flatten(0, 1)  # [HW, 2]
         coords = 2.0 * coords - 1.0  # Shift range [0, 1] to [-1, +1]
 
         # Shift coords by adding a uniform value in [-shift, shift]
         if self.training and self.shift_coords is not None:
-            shift_hw = torch.empty(2, **dd).uniform_(-self.shift_coords, self.shift_coords)
+            shift_hw = torch.empty(2, **dd).uniform_(
+                -self.shift_coords, self.shift_coords
+            )
             coords += shift_hw[None, :]
 
         # Jitter coords by multiplying the range [-1, 1] by a log-uniform value in [1/jitter, jitter]
@@ -100,7 +107,9 @@ class RopePositionEmbedding(nn.Module):
             coords *= rescale_hw
 
         # Prepare angles and sin/cos
-        angles = 2 * math.pi * coords[:, :, None] / self.periods[None, None, :]  # [HW, 2, D//4]
+        angles = (
+            2 * math.pi * coords[:, :, None] / self.periods[None, None, :]
+        )  # [HW, 2, D//4]
         angles = angles.flatten(1, 2)  # [HW, D//2]
         angles = angles.tile(2)  # [HW, D]
         cos = torch.cos(angles)  # [HW, D]
@@ -113,11 +122,15 @@ class RopePositionEmbedding(nn.Module):
         dtype = self.dtype
         if self.base is not None:
             periods = self.base ** (
-                2 * torch.arange(self.D_head // 4, device=device, dtype=dtype) / (self.D_head // 2)
+                2
+                * torch.arange(self.D_head // 4, device=device, dtype=dtype)
+                / (self.D_head // 2)
             )  # [D//4]
         else:
             base = self.max_period / self.min_period
-            exponents = torch.linspace(0, 1, self.D_head // 4, device=device, dtype=dtype)  # [D//4] range [0, 1]
+            exponents = torch.linspace(
+                0, 1, self.D_head // 4, device=device, dtype=dtype
+            )  # [D//4] range [0, 1]
             periods = base**exponents  # range [1, max_period / min_period]
             periods = periods / base  # range [min_period / max_period, 1]
             periods = periods * self.max_period  # range [min_period, max_period]
