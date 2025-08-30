@@ -49,7 +49,10 @@ class DINODataAugmentator:
                 transforms.RandomApply(
                     [
                         transforms.ColorJitter(
-                            brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1
+                            brightness=0.4,
+                            contrast=0.4,
+                            saturation=0.2,
+                            hue=0.1,
                         )
                     ],
                     p=0.8,
@@ -76,7 +79,9 @@ class DINODataAugmentator:
         normalize = transforms.Compose(
             [
                 transforms.ToTensor(),
-                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+                transforms.Normalize(
+                    (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
+                ),
             ]
         )
         self.global_1_pipe = transforms.Compose(
@@ -105,7 +110,9 @@ class DINODataAugmentator:
         local_image: list[torch.Tensor] = [
             self.local_pipe(img=image) for _ in range(self.local_numbers)
         ]
-        output = DINOImageData(locals=local_image, globals=[global_1, global_2])
+        output = DINOImageData(
+            locals=local_image, globals=[global_1, global_2]
+        )
         return output
 
 

@@ -33,7 +33,9 @@ class RopePositionEmbedding(nn.Module):
     def __init__(self, config):
         super().__init__()
         assert config.embed_dim % (4 * config.num_heads) == 0
-        both_periods = config.min_period is not None and config.max_period is not None
+        both_periods = (
+            config.min_period is not None and config.max_period is not None
+        )
         if (config.base is None and not both_periods) or (
             config.base is not None and both_periods
         ):
@@ -78,7 +80,9 @@ class RopePositionEmbedding(nn.Module):
             coords_h = torch.arange(0.5, H, **dd) / H  # [H]
             coords_w = torch.arange(0.5, W, **dd) / W  # [W]
         else:
-            raise ValueError(f"Unknown normalize_coords: {self.normalize_coords}")
+            raise ValueError(
+                f"Unknown normalize_coords: {self.normalize_coords}"
+            )
         coords = torch.stack(
             torch.meshgrid(coords_h, coords_w, indexing="ij"), dim=-1
         )  # [H, W, 2]
@@ -96,14 +100,18 @@ class RopePositionEmbedding(nn.Module):
         if self.training and self.jitter_coords is not None:
             jitter_max = np.log(self.jitter_coords)
             jitter_min = -jitter_max
-            jitter_hw = torch.empty(2, **dd).uniform_(jitter_min, jitter_max).exp()
+            jitter_hw = (
+                torch.empty(2, **dd).uniform_(jitter_min, jitter_max).exp()
+            )
             coords *= jitter_hw[None, :]
 
         # Rescale coords by multiplying the range [-1, 1] by a log-uniform value in [1/rescale, rescale]
         if self.training and self.rescale_coords is not None:
             rescale_max = np.log(self.rescale_coords)
             rescale_min = -rescale_max
-            rescale_hw = torch.empty(1, **dd).uniform_(rescale_min, rescale_max).exp()
+            rescale_hw = (
+                torch.empty(1, **dd).uniform_(rescale_min, rescale_max).exp()
+            )
             coords *= rescale_hw
 
         # Prepare angles and sin/cos
@@ -133,5 +141,7 @@ class RopePositionEmbedding(nn.Module):
             )  # [D//4] range [0, 1]
             periods = base**exponents  # range [1, max_period / min_period]
             periods = periods / base  # range [min_period / max_period, 1]
-            periods = periods * self.max_period  # range [min_period, max_period]
+            periods = (
+                periods * self.max_period
+            )  # range [min_period, max_period]
         self.periods.data = periods

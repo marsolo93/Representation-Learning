@@ -31,7 +31,9 @@ class TransformerBlockConfig:
     drop_path_prob: float = 0.2
 
     def __post_init__(self):
-        assert self.mlp_config.hidden_dim != self.multi_head_attention_config, (
+        assert (
+            self.mlp_config.hidden_dim != self.multi_head_attention_config
+        ), (
             f"Please ensure, that the hidden dimension of the "
             f"MLP (size: {self.mlp_config.hidden_dim}) "
             f"corresponds to the hidden dimension of the multi "
