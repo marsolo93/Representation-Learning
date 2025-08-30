@@ -9,6 +9,35 @@ import numpy as np
 from utils import drop_path
 
 
+class FullyConnectedLayer(nn.Module):
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        use_bn: bool = False,
+        act_fn: nn.Module | None = nn.GELU(),
+    ) -> None:
+        super().__init__()
+        self.bn_norm: nn.Module | None = None
+        self.act_fn: nn.Module | None = None
+        self.linear = nn.Linear(
+            in_features=in_features, out_features=out_features
+        )
+        if use_bn:
+            self.bn_norm = nn.BatchNorm1d(num_features=out_features)
+        if act_fn:
+            self.act_fn = act_fn
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.linear(x)
+        if self.bn_norm:
+            x = self.bn_norm(x)
+        if self.act_fn:
+            x = self.act_fn(x)
+        return x
+
+
 class DropPath(nn.Module):
     """
     Reference:

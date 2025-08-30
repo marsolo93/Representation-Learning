@@ -33,10 +33,8 @@ class GatedMLP(nn.Module):
     A gated mlp for the processing of inputs. Normally used in post-processing
     steps after a multi-head attention layer.
     """
-    def __init__(
-            self,
-            config: GatedMLPConfig
-    ) -> None:
+
+    def __init__(self, config: GatedMLPConfig) -> None:
         """
         Constructs the linear-layers, the activation function, and the drop
         out layer.
@@ -62,10 +60,7 @@ class GatedMLP(nn.Module):
         self.activation_fn = config.activation_fn
         self.drop = nn.Dropout(config.dropout)
 
-    def forward(
-            self,
-            x: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         It has two branches. The data is at first processed in the gating
         branch, consisting of a sequence of a linear layer and an activation
@@ -355,10 +350,7 @@ class PatchingEncoding(nn.Module):
     Executes the patch encoding of an image for vision transformers.
     """
 
-    def __init__(
-            self,
-            config: PatchingEncodingConfig
-    ) -> None:
+    def __init__(self, config: PatchingEncodingConfig) -> None:
         """
         Constructs the PatchingEncoding layer.
 
@@ -381,10 +373,7 @@ class PatchingEncoding(nn.Module):
             stride=kernel_size,
         )
 
-    def forward(
-            self,
-            x: torch.Tensor
-    ):
+    def forward(self, x: torch.Tensor):
         """
         Performs the PatchingEncoding step. It applies the 2-D convolution
         with a stride of the kernel size. This means only non-overlapping data

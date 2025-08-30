@@ -66,6 +66,17 @@ class RoPEConfig:
 
 
 @dataclass
+class DINOHeadConfig:
+    representation_dim: int
+    hidden_dim: int
+    bottleneck_dim: int
+    num_classes: int
+    num_layers: int = 3
+    use_batchnorm: bool = False
+    norm_last_layer: bool = True
+
+
+@dataclass
 class ViTConfig:
     # TODO: add absolute and relative positional embedding
     positional_encoding: list[Literal["absolute_trainable", "rotary_meta"]]
