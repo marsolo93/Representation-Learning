@@ -1,6 +1,9 @@
 from typing import Optional, List, Literal
 from dataclasses import dataclass
+
+import torch
 import torch.nn as nn
+
 
 
 @dataclass
@@ -47,13 +50,28 @@ class PatchingEncodingConfig:
 
 
 @dataclass
+class RoPEConfig:
+    embed_dim: int
+    num_heads: int
+    base: float | None = 100.0
+    min_period: float | None = None
+    max_period: float | None = None
+    normalize_coords: Literal["min", "max", "separate"] = "separate"
+    shift_coords: float | None = None
+    jitter_coords: float | None = None
+    rescale_coords: float | None = None
+    dtype: torch.dtype | None = None
+    device: torch.device | None = None
+
+
+@dataclass
 class ViTConfig:
     # TODO: add absolute and relative positional embedding
-    positional_encoding: list[Literal["absolute_trainable", "rotary"]]
+    positional_encoding: list[Literal["absolute_trainable", "rotary_meta"]]
     num_layers: int
-
     patch_encode_config: PatchingEncodingConfig
     transformer_block_config: TransformerBlockConfig
+    rope_config: RoPEConfig | None = None
     registers: Optional[int] = None
     positional_drop: float = 0.2
     rope_theta: Optional[float] = None
@@ -68,8 +86,8 @@ class ViTConfig:
             f"head attention layer (size: "
             f"{self.transformer_block_config.multi_head_attention_config.hidden_dim})"
         )
-        assert self.rope_theta and "rotary" in self.positional_encoding, (
-            "If you wanna use rotary positional embeddings, you need to "
-            f"specify an angle theta (rope_theta) for incremental "
-            f"rotations in {type(self)}. Usually, it is about 100.0."
-        )
+
+        if "rotary_meta" in self.positional_encoding:
+            assert self.rope_config, (
+                "If you want to select the rotary_meta encoding, you need to specify also the config."
+            )

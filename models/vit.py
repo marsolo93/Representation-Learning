@@ -8,6 +8,8 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, constant_
 
+import math
+
 from loguru import logger
 
 from typing import Optional, Tuple
@@ -19,14 +21,11 @@ from nn_configs import (
     MultiHeadAttentionConfig,
     TransformerBlockConfig,
     PatchingEncodingConfig,
-    ViTConfig
+    ViTConfig,
+    RoPEConfig
 )
-from utils import (
-    init_random_2d_freqs,
-    compute_mixed_cis,
-    init_t_xy,
-    apply_rotary_emb
-)
+from utils import apply_rope
+from layers import RopePositionEmbedding
 
 
 class GatedMLP(nn.Module):
@@ -93,7 +92,7 @@ class MultiHeadAttention(nn.Module):
     def forward(
             self,
             x: torch.Tensor,
-            freqs_cis: Optional[torch.Tensor] = None
+            rope_sincos: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         B, T, C = x.shape
         assert C == self.hidden_dim, (
@@ -107,9 +106,9 @@ class MultiHeadAttention(nn.Module):
         k = k.reshape(B, T, self.num_heads, self.head_dim).transpose(1, 2)
         v = v.reshape(B, T, self.num_heads, self.head_dim).transpose(1, 2)
         logger.trace(f"Queries, keys and values were generated.")
-        if freqs_cis is not None:
+        if rope_sincos is not None:
             logger.trace(f"Rotary positional embedding...")
-            q, k = self.__apply_rope(q=q, k=k, freqs_cis=freqs_cis)
+            q, k = apply_rope(q=q, k=k, rope=rope_sincos)
             logger.trace(f"Rotary positional embedding was added to the "
                          f"queries and keys.")
         if not self.use_flash_attn or self.is_last:
@@ -136,26 +135,6 @@ class MultiHeadAttention(nn.Module):
             return x, attn
         else:
             return x, None
-
-    def __apply_rope(
-            self,
-            q: torch.Tensor,
-            k: torch.Tensor,
-            freqs_cis: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        B, NUM_HEADS, T, DIM = q.shape
-        if self.num_registers:
-            position_register_cutoff = T - self.num_registers
-            q_rope, k_rope = apply_rotary_emb(
-                q[:, :, 1:position_register_cutoff], k[:, :, 1:position_register_cutoff], freqs_cis=freqs_cis)
-            q = torch.cat([q[:, :, :1], q_rope, q[:, :, position_register_cutoff:]], dim=-2)
-            k = torch.cat([k[:, :, :1], k_rope, k[:, :, position_register_cutoff:]], dim=-2)
-        else:
-            q_rope, k_rope = apply_rotary_emb(
-                q[:, :, 1:], k[:, :, 1:], freqs_cis=freqs_cis)
-            q = torch.cat([q[:, :, :1], q_rope], dim=-2)
-            k = torch.cat([k[:, :, :1], k_rope], dim=-2)
-        return q, k
 
 
 class TransformerBlock(nn.Module):
@@ -189,7 +168,7 @@ class TransformerBlock(nn.Module):
     def forward(
             self,
             x: torch.Tensor,
-            freqs_cis: torch.Tensor = None,
+            rope_sincos: torch.Tensor | None = None,
             return_attn: bool = False
     ) -> torch.Tensor:
         res = x
@@ -204,11 +183,11 @@ class TransformerBlock(nn.Module):
                 "scores."
             )
             logger.trace(f"Multi head attention...")
-            _, attn = self.multi_head_attention(x, freqs_cis=freqs_cis if freqs_cis is not None else None)
+            _, attn = self.multi_head_attention(x, rope_sincos=rope_sincos if rope_sincos is not None else None)
             return attn
 
         logger.trace(f"Multi head attention...")
-        x, _ = self.multi_head_attention(x, freqs_cis=freqs_cis if freqs_cis is not None else None)
+        x, _ = self.multi_head_attention(x, rope_sincos=rope_sincos if rope_sincos is not None else None)
         x = res + self.drop_path(x)
         logger.trace(f"Addition with residual was performed")
         logger.trace(f"Multi-layer perceptron computation...")
@@ -273,22 +252,11 @@ class ViT(nn.Module):
                 data=torch.empty([1, length, config.patch_encode_config.hidden_dim])
             )
 
-        if "rotary" in config.positional_encoding:
-            self.compute_cis = partial(compute_mixed_cis,
-                                       num_heads=num_heads)
-            freqs = []
-            for i in range(self.config.num_layers):
-                freqs.append(
-                    init_random_2d_freqs(dim=hidden_dim // num_heads,
-                                         num_heads=num_heads,
-                                         theta=config.rope_theta)
-                )
-            freqs = torch.stack(freqs, dim=1).view(2, self.config.num_layers, -1)
-            self.freqs = nn.Parameter(freqs.clone(), requires_grad=True)
-            self.freqs_t_x, self.freqs_t_y = init_t_xy(
-                end_x=img_size // patch_size,
-                end_y=img_size // patch_size
+        if "rotary_meta" in config.positional_encoding:
+            self.rope_embed = RopePositionEmbedding(
+                config=config.rope_config
             )
+
         self.blocks = nn.ModuleList(
             [TransformerBlock(
                 config=config.transformer_block_config,
@@ -313,6 +281,8 @@ class ViT(nn.Module):
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
+        if "rotary_meta" in self.config.positional_encoding:
+            self.rope_embed._init_weights()
         if isinstance(m, nn.Linear):
             trunc_normal_(m.weight, std=.02)
             if isinstance(m, nn.Linear) and m.bias is not None:
@@ -326,16 +296,13 @@ class ViT(nn.Module):
             x: torch.Tensor,
     ) -> torch.Tensor:
         logger.trace(f"Image was parsed to the model. DATA SHAPE: {x.shape}")
-        x = self.__preprocess_patch(x)
+        x, num_patch = self.__preprocess_patch(x)
         logger.trace(f"Image is preprocessed. DATA SHAPE: {x.shape}")
-        if "rotary" in self.config.positional_encoding:
-            freqs_cis = self.compute_cis(
-                self.freqs,
-                self.freqs_t_x,
-                self.freqs_t_y)
+        if "rotary_meta" in self.config.positional_encoding:
+            rope_sincos = self.rope_embed(H=num_patch, W=num_patch)
             for i, blk in enumerate(self.blocks):
                 logger.trace(f"TRANSFORMER BLOCK {i} OUT OF {len(self.blocks) - 1}")
-                x = blk(x, freqs_cis=freqs_cis[i])
+                x = blk(x, rope_sincos=rope_sincos)
         else:
             for i, blk in enumerate(self.blocks):
                 x = blk(x)
@@ -346,10 +313,11 @@ class ViT(nn.Module):
     def __preprocess_patch(
             self,
             x: torch.Tensor
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, int]:
         B, _, _, _ = x.shape
         logger.trace(f"Image patching and encoding...")
         x = self.patch_encode(x)
+        num_patches_single_dim = int(math.sqrt(x.shape[1]))
         logger.trace(f"Image patching and encoding...")
         cls_tokens = self.cls_token.expand(B, -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
@@ -358,16 +326,16 @@ class ViT(nn.Module):
             x = torch.cat((x, register_tokens), dim=1)
         if "absolute_trainable" in self.config.positional_encoding:
             x = x + self.positional_encoding
-        return self.pos_drop(x)
+        return self.pos_drop(x), num_patches_single_dim
 
     def get_final_attention_maps(self, x):
-        x = self.__preprocess_patch(x)
-        if "rotary" in self.config.positional_encoding:
-            freqs_cis = self.compute_cis(self.freqs, self.freqs_t_x,
-                                         self.freqs_t_y)
+        x, num_patch = self.__preprocess_patch(x)
+        if "rotary_meta" in self.config.positional_encoding:
+            rope_sincos = self.rope_embed(H=num_patch, W=num_patch)
             for i, blk in enumerate(self.blocks[:-1]):
-                x = blk(x, freqs_cis=freqs_cis[i])
-            attn = self.blocks[-1](x, freqs_cis=freqs_cis[-1], return_attn=True)
+                logger.trace(f"TRANSFORMER BLOCK {i} OUT OF {len(self.blocks) - 1}")
+                x = blk(x, rope_sincos=rope_sincos)
+            attn = self.blocks[-1](x, rope_sincos=rope_sincos, return_attn=True)
         else:
             for i, blk in enumerate(self.blocks[:-1]):
                 x = blk(x)
@@ -386,7 +354,7 @@ if __name__ == "__main__":
     NUM_PATCH_PER_DIM = 16
     IN_CHANNELS = 3
 
-    POSITIONAL_EMBEDDING = ["rotary"]
+    POSITIONAL_EMBEDDING = ["rotary_meta"]
 
     self_attention_config = MultiHeadAttentionConfig(
         hidden_dim=HIDDEN_DIM,
@@ -412,11 +380,17 @@ if __name__ == "__main__":
         in_channels=IN_CHANNELS
     )
 
+    rope_config = RoPEConfig(
+        embed_dim=HIDDEN_DIM,
+        num_heads=NUM_HEADS,
+    )
+
     vit_config = ViTConfig(
         positional_encoding=POSITIONAL_EMBEDDING,
         registers=16,
         num_layers=NUM_LAYERS,
         patch_encode_config=patch_encoding_config,
+        rope_config=rope_config,
         transformer_block_config=transformer_block_config,
         rope_theta=100.0
     )
@@ -435,4 +409,3 @@ if __name__ == "__main__":
     assert out.shape == torch.Size([BATCH_SIZE, HIDDEN_DIM]), (
         "Sorry, not correct!"
     )
-
