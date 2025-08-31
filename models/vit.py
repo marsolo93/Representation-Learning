@@ -502,7 +502,7 @@ class ViT(nn.Module):
         return vit_output
 
     def get_final_attention_maps(self, x):
-        x, num_patch = self.__preprocess_patch(x)
+        x, num_patch, _ = self.__preprocess_patch(x)
         if "rotary_meta" in self.config.positional_encoding:
             rope_sincos = self.rope_embed(H=num_patch, W=num_patch)
             for i, blk in enumerate(self.blocks[:-1]):
