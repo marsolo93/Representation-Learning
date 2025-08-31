@@ -107,3 +107,18 @@ class DINOHead(nn.Module):
         if do_last_layer:
             x = self.last_layer(x)
         return x
+
+
+class IBOTHead(DINOHead):
+    """
+    Implementation is the same as for the DINOHead, but it is processing
+    a sequence of tokens not a single token. As the nn.Linear layers process
+    only the last dimension, the DINOHead implementation can be used to
+    process the feature tokens.
+    """
+
+    def __init__(
+            self,
+            config: DINOHeadConfig
+    ) -> None:
+        super().__init__(config=config)
