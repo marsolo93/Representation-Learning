@@ -398,9 +398,14 @@ class PatchingEncoding(nn.Module):
 
 class ViT(nn.Module):
 
-    def __init__(self, config: ViTConfig):
+    def __init__(
+            self,
+            config: ViTConfig,
+            masking_rate: float | None = None
+    ) -> None:
         super().__init__()
         self.config = config
+        self.masking_rate = masking_rate
         hidden_dim = config.patch_encode_config.hidden_dim
         self.patch_encode = PatchingEncoding(config.patch_encode_config)
         self.cls_token = nn.Parameter(data=torch.empty([1, 1, hidden_dim]))
@@ -408,6 +413,9 @@ class ViT(nn.Module):
             self.register_token = nn.Parameter(
                 data=torch.empty([1, config.registers, hidden_dim])
             )
+        self.mask_token = nn.Parameter(
+            data=torch.empty([1, hidden_dim])
+        )
         if "absolute_trainable" in config.positional_encoding:
             if config.registers:
                 length = (
@@ -447,14 +455,15 @@ class ViT(nn.Module):
         self.pos_drop = nn.Dropout(p=config.positional_drop)
         self.norm = nn.LayerNorm(hidden_dim)
 
-        if "absolute_trainable" in config.positional_encoding:
-            trunc_normal_(self.positional_encoding, std=0.02)
-        trunc_normal_(self.cls_token, std=0.02)
-        if config.registers:
-            trunc_normal_(self.register_token, std=0.02)
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
+        if "absolute_trainable" in self.config.positional_encoding:
+            nn.init.normal_(self.positional_encoding, std=0.02)
+        nn.init.normal_(self.cls_token, std=0.02)
+        nn.init.zeros_(self.mask_token)
+        if self.config.registers:
+            nn.init.normal_(self.register_token, std=0.02)
         if "rotary_meta" in self.config.positional_encoding:
             self.rope_embed._init_weights()
         if isinstance(m, nn.Linear):
@@ -470,7 +479,7 @@ class ViT(nn.Module):
         x: torch.Tensor,
     ) -> ViTOutput:
         logger.trace(f"Image was parsed to the model. DATA SHAPE: {x.shape}")
-        x, num_patch = self.__preprocess_patch(x)
+        x, num_patch, mask = self.__preprocess_patch(x)
         logger.trace(f"Image is preprocessed. DATA SHAPE: {x.shape}")
         if "rotary_meta" in self.config.positional_encoding:
             rope_sincos = self.rope_embed(H=num_patch, W=num_patch)
@@ -491,24 +500,10 @@ class ViT(nn.Module):
             register_tokens=(
                 x[:, int(num_patch**2) :, :] if self.config.registers else None
             ),
+            mask=mask
         )
         logger.trace(f"Output generated with id: {id(vit_output)}")
         return vit_output
-
-    def __preprocess_patch(self, x: torch.Tensor) -> Tuple[torch.Tensor, int]:
-        B, _, _, _ = x.shape
-        logger.trace(f"Image patching and encoding...")
-        x = self.patch_encode(x)
-        num_patches_single_dim = int(math.sqrt(x.shape[1]))
-        logger.trace(f"Image patching and encoding...")
-        cls_tokens = self.cls_token.expand(B, -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
-        if self.config.registers:
-            register_tokens = self.register_token.expand(B, -1, -1)
-            x = torch.cat((x, register_tokens), dim=1)
-        if "absolute_trainable" in self.config.positional_encoding:
-            x = x + self.positional_encoding
-        return self.pos_drop(x), num_patches_single_dim
 
     def get_final_attention_maps(self, x):
         x, num_patch = self.__preprocess_patch(x)
@@ -527,6 +522,39 @@ class ViT(nn.Module):
                 x = blk(x)
             attn = self.blocks[-1](x, return_attn=True)
         return attn
+
+    def __preprocess_patch(
+            self,
+            x: torch.Tensor
+    ) -> Tuple[torch.Tensor, int, torch.Tensor | None]:
+        B, _, _, _ = x.shape
+        logger.trace(f"Image patching and encoding...")
+        x = self.patch_encode(x)
+        if self.masking_rate:
+            x, mask = self.__masking(x)
+        else:
+            mask = None
+        num_patches_single_dim = int(math.sqrt(x.shape[1]))
+        logger.trace(f"Image patching and encoding...")
+        cls_tokens = self.cls_token.expand(B, -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)
+        if self.config.registers:
+            register_tokens = self.register_token.expand(B, -1, -1)
+            x = torch.cat((x, register_tokens), dim=1)
+        if "absolute_trainable" in self.config.positional_encoding:
+            x = x + self.positional_encoding
+        return self.pos_drop(x), num_patches_single_dim, mask
+
+    def __masking(
+            self,
+            x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        B, T, C = x.shape
+        x = x.flatten(0, 1)  # [B, T, C] -> [B*T, C]
+        mask = torch.rand([B * T]) < self.masking_rate
+        x[mask] = self.mask_token
+        x = x.unflatten(0, [B, T])
+        return x, mask
 
 
 if __name__ == "__main__":
