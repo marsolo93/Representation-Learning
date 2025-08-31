@@ -42,7 +42,7 @@ class DINOLoss(nn.Module):
         student_out: torch.Tensor,
         teacher_out: torch.Tensor,
         between_globals: bool = False,
-    ) -> None:
+    ) -> torch.Tensor:
         """
         Computes the loss between the student and teacher representation.
 
