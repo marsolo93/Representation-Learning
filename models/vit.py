@@ -399,9 +399,7 @@ class PatchingEncoding(nn.Module):
 class ViT(nn.Module):
 
     def __init__(
-            self,
-            config: ViTConfig,
-            masking_rate: float | None = None
+        self, config: ViTConfig, masking_rate: float | None = None
     ) -> None:
         super().__init__()
         self.config = config
@@ -413,9 +411,7 @@ class ViT(nn.Module):
             self.register_token = nn.Parameter(
                 data=torch.empty([1, config.registers, hidden_dim])
             )
-        self.mask_token = nn.Parameter(
-            data=torch.empty([1, hidden_dim])
-        )
+        self.mask_token = nn.Parameter(data=torch.empty([1, hidden_dim]))
         if "absolute_trainable" in config.positional_encoding:
             if config.registers:
                 length = (
@@ -500,7 +496,7 @@ class ViT(nn.Module):
             register_tokens=(
                 x[:, int(num_patch**2) :, :] if self.config.registers else None
             ),
-            mask=mask
+            mask=mask,
         )
         logger.trace(f"Output generated with id: {id(vit_output)}")
         return vit_output
@@ -524,8 +520,7 @@ class ViT(nn.Module):
         return attn
 
     def __preprocess_patch(
-            self,
-            x: torch.Tensor
+        self, x: torch.Tensor
     ) -> Tuple[torch.Tensor, int, torch.Tensor | None]:
         B, _, _, _ = x.shape
         logger.trace(f"Image patching and encoding...")
@@ -545,10 +540,7 @@ class ViT(nn.Module):
             x = x + self.positional_encoding
         return self.pos_drop(x), num_patches_single_dim, mask
 
-    def __masking(
-            self,
-            x: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __masking(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         B, T, C = x.shape
         x = x.flatten(0, 1)  # [B, T, C] -> [B*T, C]
         mask = torch.rand([B * T]) < self.masking_rate
