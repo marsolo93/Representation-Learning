@@ -32,21 +32,57 @@ class DINOLoss(nn.Module):
     global_loss = dino_loss(locals_student_repr, globals_teacher_probs,
                             between_globals=True)
     """
-    def __init__(
-            self,
-            student_temperature: float = 0.1
-    ):
+
+    def __init__(self, student_temperature: float = 0.1):
         super().__init__()
         self.student_temperature = student_temperature
 
     def forward(
-            self,
-            student_out: torch.Tensor,
-            teacher_out: torch.Tensor,
-            between_globals: bool = False
+        self,
+        student_out: torch.Tensor,
+        teacher_out: torch.Tensor,
+        between_globals: bool = False,
     ) -> None:
         """
         Computes the loss between the student and teacher representation.
+
+        Notes
+        -----
+        In case of the loss computation between globals and locals:
+
+        The interaction of all teacher probabilities and student logarithmic
+        probabilities are computed (let's assume, there are two locals and
+        two globals):
+
+        loss =   [
+            [-p(t_1) * log(p(s_1)) ,   -p(t_1) * log(p(s_2))],
+            [-p(t_2) * log(p(s_1)) ,   -p(t_2) * log(p(s_2))]
+        ]
+
+        All these values are summed, yielding the total loss of the local
+        global interaction.
+
+        In case of the loss computation of the globals:
+
+        At first the interaction matrix between all entries are computed.
+
+        loss =   [
+            [-p(t_1) * log(p(s_1)) ,   -p(t_1) * log(p(s_2))],
+            [-p(t_2) * log(p(s_1)) ,   -p(t_2) * log(p(s_2))]
+        ]
+
+        However, this includes the computation of the representation of the
+        student and teacher on the same globals. This is not allowed.
+
+        Thus, zeros are added on the diagonal on the interaction matrix
+        (loss matrix). Usually, it is a 2x2 matrix and zeros are added on
+        the diagonal, forming the following matrix:
+        loss =   [
+            [0                     ,   -p(t_1) * log(p(s_2))],
+            [-p(t_2) * log(p(s_1)) ,   0                    ]
+        ]
+        The addition of zeros avoids the computation of the cross entropy
+        between the same globals.
 
         Parameters
         ----------
@@ -78,19 +114,24 @@ class DINOLoss(nn.Module):
             f"dim student: {student_dim}"
         )
         #  create the log of the softmax
-        student_logits = F.log_softmax(student_out / self.student_temperature,
-                                       dim=-1)
+        student_logits = F.log_softmax(
+            student_out / self.student_temperature, dim=-1
+        )
         if between_globals:
-            loss = -torch.einsum('t b n, s b n -> s t', student_logits,
-                                 teacher_out)
+            loss = -torch.einsum(
+                "t b n, s b n -> t s", teacher_out, student_logits
+            )
+            #  this determines the minimal number of a matrix with the
+            #  dimensionalities NUM_STUDENT_CROPS x NUM_TEACHER_CROPS
             min_dim = min(num_student, num_teacher)
             loss = torch.diagonal_scatter(loss, src=torch.zeros(min_dim))
             loss = loss.sum() / (
                 b_teacher * num_teacher * num_student - b_teacher * min_dim
             )
         else:
-            loss = -torch.einsum('t b n, s b n -> ', student_logits,
-                                 teacher_out)
+            loss = -torch.einsum(
+                "t b n, s b n -> ", student_logits, teacher_out
+            )
             loss = loss / (b_teacher * num_teacher * num_student)
         return loss
 
@@ -110,9 +151,12 @@ if __name__ == "__main__":
 
     teacher_global_repr = F.softmax(teacher_global_repr, dim=-1)
 
-    loss_locals = dino_loss(student_out=student_local_repr,
-                            teacher_out=teacher_global_repr)
+    loss_locals = dino_loss(
+        student_out=student_local_repr, teacher_out=teacher_global_repr
+    )
 
-    loss_globals = dino_loss(student_out=student_global_repr,
-                             teacher_out=teacher_global_repr,
-                             between_globals=True)
+    loss_globals = dino_loss(
+        student_out=student_global_repr,
+        teacher_out=teacher_global_repr,
+        between_globals=True,
+    )
