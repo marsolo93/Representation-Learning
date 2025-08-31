@@ -117,8 +117,5 @@ class IBOTHead(DINOHead):
     process the feature tokens.
     """
 
-    def __init__(
-            self,
-            config: DINOHeadConfig
-    ) -> None:
+    def __init__(self, config: DINOHeadConfig) -> None:
         super().__init__(config=config)

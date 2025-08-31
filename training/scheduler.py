@@ -9,7 +9,5 @@ class Scheduler(ABC):
         pass
 
     @abstractmethod
-    def update_parameter(
-            self
-    ):
+    def update_parameter(self):
         pass

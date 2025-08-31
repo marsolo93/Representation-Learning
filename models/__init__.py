@@ -3,13 +3,10 @@ from .nn_configs import (
     MultiHeadAttentionConfig,
     TransformerBlockConfig,
     ViTConfig,
-    DINOHeadConfig
+    DINOHeadConfig,
 )
 
-from .heads import (
-    DINOHead,
-    IBOTHead
-)
+from .heads import DINOHead, IBOTHead
 
 from .model_output import ViTOutput
 

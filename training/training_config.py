@@ -16,7 +16,7 @@ class DINOV1Config:
     learning_rate_scheduler: Scheduler | None = None
     weight_decay_scheduler: Scheduler | None = None
     teacher_temp_scheduler: Scheduler | None = None
-    teacher_centering_option: Literal['update', 'sinkhorn_kappa'] = 'update'
+    teacher_centering_option: Literal["update", "sinkhorn_kappa"] = "update"
 
 
 @dataclass
@@ -33,7 +33,7 @@ class DINOV2Config:
     learning_rate_scheduler: Scheduler | None = None
     weight_decay_scheduler: Scheduler | None = None
     teacher_temp_scheduler: Scheduler | None = None
-    teacher_centering_option: Literal['update', 'sinkhorn_kappa'] = 'update'
+    teacher_centering_option: Literal["update", "sinkhorn_kappa"] = "update"
 
 
 # TODO: prepare the DINOV3Config
@@ -52,4 +52,4 @@ class DINOV3Config:
     learning_rate_scheduler: Scheduler | None = None
     weight_decay_scheduler: Scheduler | None = None
     teacher_temp_scheduler: Scheduler | None = None
-    teacher_centering_option: Literal['update', 'sinkhorn_kappa'] = 'update'
+    teacher_centering_option: Literal["update", "sinkhorn_kappa"] = "update"
