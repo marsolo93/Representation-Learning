@@ -160,3 +160,6 @@ if __name__ == "__main__":
         teacher_out=teacher_global_repr,
         between_globals=True,
     )
+
+    print(loss_globals)
+    print(loss_locals)
