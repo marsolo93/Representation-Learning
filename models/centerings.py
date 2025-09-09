@@ -90,6 +90,7 @@ class SinkhornKnopp(nn.Module):
         teacher_token: torch.Tensor,
         teacher_temp: float,
         mask: torch.Tensor | None = None,
+        reshape_original_shape: bool = True,
     ):
         """
         Computes the doubly stochastic matrices from the class or patch tokens.
@@ -112,17 +113,26 @@ class SinkhornKnopp(nn.Module):
         mask: torch.Tensor
             The mask for the case for processing of the patch tokens case.
 
+        reshape_original_shape: bool
+            An option for the patch tokens processing. It determines, whether
+            the original shape should be regenerated.
+
         Returns
         -------
         teacher_token: torch.Tensor
             The doubly stochastic representations of the teacher tokens.
         """
         teacher_token = teacher_token.float()
+        original_ndim = teacher_token.ndim
 
-        if teacher_token.ndim == 3:
+        if original_ndim == 3:
             assert mask is not None, (
                 "You need to specify a mask pattern if you want to use "
                 "Sinkhorn Knopp on patches."
+            )
+            original_batchsize, sequence_length = (
+                teacher_token.shape[0],
+                teacher_token.shape[1],
             )
             teacher_token = teacher_token.flatten(0, 1)
             hidden_dim = teacher_token.shape[-1]
@@ -131,10 +141,12 @@ class SinkhornKnopp(nn.Module):
                 teacher_token / teacher_temp
             ) * mask.float().unsqueeze(-1)
 
-        elif teacher_token.ndim == 2:
+        elif original_ndim == 2:
             hidden_dim = teacher_token.shape[-1]
             batch_num = teacher_token.shape[0]
             teacher_token = torch.exp(teacher_token / teacher_temp)
+            original_batchsize = None
+            sequence_length = None
         else:
             raise NotImplementedError(
                 f"The dimensionality of {teacher_token.ndim}"
@@ -162,7 +174,13 @@ class SinkhornKnopp(nn.Module):
             teacher_token = teacher_token / batch_num
 
         teacher_token = teacher_token * batch_num
-        return teacher_token.t()
+        teacher_token = teacher_token.t()
+        if original_ndim == 3 and reshape_original_shape:
+            teacher_token = teacher_token.unflatten(
+                0, [original_batchsize, sequence_length]
+            )
+
+        return teacher_token
 
 
 if __name__ == "__main__":
@@ -174,11 +192,22 @@ if __name__ == "__main__":
 
     mask = (torch.randn([BATCH_SIZE * SEQ_LENGTH]) < 0.5).bool()
 
-    sink_horn = SinkhornKnopp()
+    sink_horn = SinkhornKnopp(n_iterations=5)
     result = sink_horn(
-        teacher_token=teacher_out_patches, teacher_temp=0.5, mask=mask
+        teacher_token=teacher_out_patches,
+        teacher_temp=0.5,
+        mask=mask,
+        reshape_original_shape=False,
     )
+
+    print(f"REUSLTS WITH PATCH TOKENS: {result}")
+    print(f"PATCH TOKENS ROW SUM: {torch.sum(result, dim=0)}")
+    print(f"PATCH TOKENS COL SUM: {torch.sum(result, dim=1)}")
 
     teacher_out_patches = torch.randn([BATCH_SIZE, HIDDEN_DIM])
 
     result = sink_horn(teacher_token=teacher_out_patches, teacher_temp=0.3)
+
+    print(f"REUSLTS WITH CLS TOKENS: {result}")
+    print(f"CLS TOKENS ROW SUM: {torch.sum(result, dim=0)}")
+    print(f"CLS TOKENS COL SUM: {torch.sum(result, dim=1)}")
