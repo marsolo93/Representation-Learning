@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 import math
-from typing import Literal
 
 import numpy as np
 
@@ -55,8 +54,11 @@ class DropPath(nn.Module):
 
 class RopePositionEmbedding(nn.Module):
     """
-    Copied from: https://github.com/facebookresearch/dinov3/blob/main/dinov3/layers/rope_position_encoding.py
-    and a bit modified.
+    Copied from:
+    https://github.com/facebookresearch/dinov3/blob/main/dinov3/layers/
+    rope_position_encoding.py
+
+    and a bit modified...
     """
 
     def __init__(self, config):
@@ -82,7 +84,9 @@ class RopePositionEmbedding(nn.Module):
         self.jitter_coords = config.jitter_coords
         self.rescale_coords = config.rescale_coords
 
-        # Needs persistent=True because we do teacher.load_state_dict(student.state_dict()) to initialize the teacher
+        # Needs persistent=True because we do
+        # teacher.load_state_dict(student.state_dict()) to initialize the
+        # teacher
         self.dtype = config.dtype  # Don't rely on self.periods.dtype
         self.register_buffer(
             "periods",
