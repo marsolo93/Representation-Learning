@@ -59,10 +59,29 @@ class EMAClassCentering(nn.Module):
 class SinkhornKnopp(nn.Module):
     """
     This module forms from the class and patch token
-    doubly stochastic representatives. This means, it scales the rows of the
+    doubly stochastic representatives. This means, it scales the rows and the
+    columns to 1.
+
+    sum_i(x_ij) = sum_j(x_ij) = 1
+
+    This is achieved in an iterative procedure.
+
+    References
+    ----------
+    [1] - https://en.wikipedia.org/wiki/Doubly_stochastic_matrix#
+    [2] - https://en.wikipedia.org/wiki/Sinkhorn%27s_theorem
     """
 
     def __init__(self, n_iterations: int = 3) -> None:
+        """
+        Constructs the module, which can be employed for the class and patch
+        tokens.
+
+        Parameters
+        ----------
+        n_iterations: int
+            Number of iterations to achieve the conditions stated above.
+        """
         super().__init__()
         self.n_iterations = n_iterations
 
@@ -72,6 +91,32 @@ class SinkhornKnopp(nn.Module):
         teacher_temp: float,
         mask: torch.Tensor | None = None,
     ):
+        """
+        Computes the doubly stochastic matrices from the class or patch tokens.
+        It expects the parallel computing shape:
+
+        For class tokens:
+            [NUM_CROPS * BATCH_SIZE, HIDDEN_DIM]
+        For patch tokens:
+            [NUM_CROPS * BATCH_SIZE, SEQUENCE_LENGTH, HIDDEN_DIM]
+
+        Parameters
+        ----------
+        teacher_token: torch.Tensor
+            The teacher tokens, which should be transformed to doubly
+            stochastic matrices.
+
+        teacher_temp: float
+            The float number for the sharpness of the distributions.
+
+        mask: torch.Tensor
+            The mask for the case for processing of the patch tokens case.
+
+        Returns
+        -------
+        teacher_token: torch.Tensor
+            The doubly stochastic representations of the teacher tokens.
+        """
         teacher_token = teacher_token.float()
 
         if teacher_token.ndim == 3:
