@@ -57,10 +57,12 @@ class EMAClassCentering(nn.Module):
 
 
 class SinkhornKnopp(nn.Module):
+    """
+    This module forms from the class and patch token
+    doubly stochastic representatives. This means, it scales the rows of the
+    """
 
-    def __init__(
-        self, teacher_temp: float = 0.2, n_iterations: int = 3
-    ) -> None:
+    def __init__(self, n_iterations: int = 3) -> None:
         super().__init__()
         self.n_iterations = n_iterations
 
@@ -84,10 +86,16 @@ class SinkhornKnopp(nn.Module):
                 teacher_token / teacher_temp
             ) * mask.float().unsqueeze(-1)
 
-        else:
+        elif teacher_token.ndim == 2:
             hidden_dim = teacher_token.shape[-1]
             batch_num = teacher_token.shape[0]
             teacher_token = torch.exp(teacher_token / teacher_temp)
+        else:
+            raise NotImplementedError(
+                f"The dimensionality of {teacher_token.ndim}"
+                f"is not supported for the Sinkhorn Knopp "
+                f"scaling."
+            )
 
         teacher_token = teacher_token.t()
         teacher_token = teacher_token / torch.sum(teacher_token)
@@ -126,4 +134,6 @@ if __name__ == "__main__":
         teacher_token=teacher_out_patches, teacher_temp=0.5, mask=mask
     )
 
-    print(result)
+    teacher_out_patches = torch.randn([BATCH_SIZE, HIDDEN_DIM])
+
+    result = sink_horn(teacher_token=teacher_out_patches, teacher_temp=0.3)
