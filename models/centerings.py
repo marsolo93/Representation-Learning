@@ -17,7 +17,7 @@ class EMAPatchCentering(nn.Module):
 
     @torch.no_grad()
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        assert x.ndim == self.center_momentum.ndim, (
+        assert x.ndim == self.center.ndim, (
             "Sorry, please ensure that the number of dimensions between the "
             "input tensor and the output centering tensor is the same."
         )
@@ -43,7 +43,7 @@ class EMAClassCentering(nn.Module):
 
     @torch.no_grad()
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        assert x.ndim == self.center_momentum.ndim, (
+        assert x.ndim == self.center.ndim, (
             "Sorry, please ensure that the number of dimensions between the "
             "input tensor and the output centering tensor is the same."
         )
